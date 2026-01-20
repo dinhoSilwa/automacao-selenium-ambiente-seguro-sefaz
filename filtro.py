@@ -42,23 +42,27 @@ def aplicar_filtro_mfe(driver):
         EC.element_to_be_clickable((By.XPATH, f"//a[text()='{cgf}']"))
     )
     link_cgf.click()
-    time.sleep(2)
+    time.sleep(3)  # Aguarda redirecionamento para https://cfe.sefaz.ce.gov.br/mfe/portal...
 
-    # --- Passo 4: Fechar popup "ATENÇÃO!!!!!!" (se aparecer) ---
-    print("Passo 4: Aguardando possível popup 'ATENÇÃO!!!!!!'...")
+    # --- ✅ NOVO LOCAL DO POPUP: após redirecionamento ---
+    print("Passo 4: Verificando popup 'ATENÇÃO!!!!!!' após redirecionamento...")
     try:
-        close_button = WebDriverWait(driver, 5).until(
-            EC.element_to_be_clickable((By.XPATH, "//div[@class='modal-header']//button[@class='close' and @ng-click='$hide()']"))
+        # Espera até 6 segundos pelo modal (ele pode demorar um pouco para aparecer)
+        close_button = WebDriverWait(driver, 6).until(
+            EC.element_to_be_clickable((
+                By.XPATH,
+                "//div[@class='modal-header']//button[@class='close' and @ng-click='$hide()']"
+            ))
         )
-        print("Popup detectado. Fechando...")
+        print("Popup 'ATENÇÃO!!!!!!' detectado. Fechando...")
         close_button.click()
+        # Opcional: aguarda o modal desaparecer
         WebDriverWait(driver, 3).until_not(
             EC.presence_of_element_located((By.XPATH, "//div[@class='modal-header']/h4[text()='ATENÇÃO!!!!!!']"))
         )
         time.sleep(1)
     except Exception:
-        print("Nenhum popup 'ATENÇÃO!!!!!!' encontrado ou não foi necessário fechar.")
-
+        print("Nenhum popup 'ATENÇÃO!!!!!!' encontrado após redirecionamento. Prosseguindo...")
 
     # --- Passo 5: Clicar em "Consultar NFC-e" ---
     print("Passo 5: Acessando 'Consultar NFC-e'...")
