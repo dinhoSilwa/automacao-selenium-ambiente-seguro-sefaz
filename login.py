@@ -17,14 +17,32 @@ def realizar_login_sefaz() -> webdriver.Chrome:
     """
     Realiza login no portal da SEFAZ-CE.
     Verifica se há mensagem de "usuário já logado" e aborta se necessário.
+    Configura o Chrome para permitir downloads automáticos de XMLs.
     Retorna o driver autenticado.
     """
+    # Configurações do Chrome
     options = webdriver.ChromeOptions()
     options.add_argument("--start-maximized")
     options.add_argument("--disable-blink-features=AutomationControlled")
     options.add_experimental_option("excludeSwitches", ["enable-automation"])
     options.add_experimental_option('useAutomationExtension', False)
 
+    # 👇 Configurações para download automático (evita "arquivo perigoso")
+    download_dir = os.path.abspath("downloads")
+    os.makedirs(download_dir, exist_ok=True)
+
+    prefs = {
+        "download.default_directory": download_dir,
+        "download.prompt_for_download": False,
+        "download.directory_upgrade": True,
+        "safebrowsing.enabled": True,
+        "safebrowsing.disable_download_protection": True,
+        "profile.default_content_setting_values.notifications": 2,
+        "profile.default_content_settings.popups": 0,
+    }
+    options.add_experimental_option("prefs", prefs)
+
+    # Inicializa o driver
     driver = webdriver.Chrome(service=Service(ChromeDriverManager().install()), options=options)
     driver.execute_script("delete navigator.__proto__.webdriver")
 
