@@ -1,3 +1,5 @@
+# filtro.py
+
 import os
 import time
 from selenium.webdriver.common.by import By
@@ -26,52 +28,44 @@ def aplicar_filtro_mfe(driver):
     link_acessar_mfe.click()
     time.sleep(1.5)
 
-    # --- Passo 3: Clicar no CGF ---
+    # --- Passo 3: Clicar no CGF e mudar para nova aba ---
     cgf = os.getenv("CGF")
     if not cgf:
         raise ValueError("Variável CGF não definida no .env")
 
     print(f"Passo 3: Clicando no CGF '{cgf}'...")
-    original_window = driver.current_window_handle  # 👈 Salva a aba original
+    original_window = driver.current_window_handle
     link_cgf = wait.until(EC.element_to_be_clickable((By.XPATH, f"//a[text()='{cgf}']")))
-    driver.execute_script("arguments[0].click();", link_cgf)  # Clique via JS para confiabilidade
+    driver.execute_script("arguments[0].click();", link_cgf)
 
-    # --- ⏳ AGUARDA NOVA ABA ABRIR ---
-    print("Aguardando nova aba do Portal MFE...")
+    # Aguarda nova aba
     WebDriverWait(driver, 15).until(lambda d: len(d.window_handles) > 1)
+    new_window = [w for w in driver.window_handles if w != original_window][0]
+    driver.switch_to.window(new_window)
+    print("Mudou para a nova aba.")
 
-    # --- 🔁 MUDA O FOCO PARA A NOVA ABA ---
-    all_windows = driver.window_handles
-    new_window = None
-    for handle in all_windows:
-        if handle != original_window:
-            new_window = handle
-            break
-
-    if new_window:
-        driver.switch_to.window(new_window)
-        print("✅ Foco alterado para a nova aba do Portal MFE.")
-    else:
-        raise RuntimeError("Nova aba não foi aberta após o clique no CGF.")
+    # Fecha aba antiga
+    driver.switch_to.window(original_window)
+    driver.close()
+    driver.switch_to.window(new_window)
 
     # --- Aguarda carregamento da nova página ---
-    print("Aguardando carregamento do Portal MFE...")
+    print("Aguardando carregamento do portal MFE...")
     wait.until(
         EC.presence_of_element_located((By.CSS_SELECTOR, "div.mfe-migration-modal, .mainlevel"))
     )
     time.sleep(2)
 
-    # --- ✅ FECHA POPUP DE MIGRAÇÃO (se existir) ---
-    print("Verificando popup de migração 'ATENÇÃO!!!!!!'...")
+    # --- Fecha popup de migração (se existir) ---
     try:
         close_btn = wait.until(
             EC.element_to_be_clickable((By.CSS_SELECTOR, "div.mfe-migration-modal button.close[ng-click='$hide()']"))
         )
-        print("Popup detectado. Fechando...")
+        print("Popup de migração detectado. Fechando...")
         close_btn.click()
         time.sleep(1)
-    except Exception:
-        print("Nenhum popup encontrado. Prosseguindo...")
+    except:
+        print("Nenhum popup de migração encontrado.")
 
     # --- Passo 4: Clicar em 'Consultar NFC-e' ---
     print("Passo 4: Clicando em 'Consultar NFC-e'...")
@@ -81,7 +75,7 @@ def aplicar_filtro_mfe(driver):
     link_consultar.click()
     time.sleep(2)
 
-    # --- Passo 5: Preencher filtros ---
+    # --- Preencher filtros ---
     start_date = os.getenv("START")
     start_time = os.getenv("TIMESTART")
     end_date = os.getenv("END")
@@ -90,7 +84,7 @@ def aplicar_filtro_mfe(driver):
     if not all([start_date, start_time, end_date, end_time]):
         raise ValueError("As variáveis START, TIMESTART, END e TIMEEND devem estar no .env")
 
-    print("Passo 5: Preenchendo filtros de período...")
+    print("Preenchendo filtros...")
 
     # Datas
     driver.execute_script("arguments[0].value = arguments[1];", 
@@ -106,12 +100,55 @@ def aplicar_filtro_mfe(driver):
 
     time.sleep(1)
 
-    # --- Passo 6: Clicar em 'Consultar' ---
-    print("Passo 6: Clicando em 'Consultar'...")
-    btn_consultar = wait.until(
-        EC.element_to_be_clickable((By.XPATH, "//button[contains(@ng-click, 'find()')]"))
-    )
-    btn_consultar.click()
-    time.sleep(2)
+    # --- Aplicar filtro com lógica de retry + detecção de "CNPJ: Não informado" ---
+    max_tentativas = 2
+    tabela_xpath = '//*[@id="conteudo_central"]/div/div/div/div[3]/div[2]'
 
+    for tentativa in range(1, max_tentativas + 1):
+        print(f"\nTentativa {tentativa}: clicando em 'Consultar'...")
+
+        # Clica no botão Consultar
+        btn_consultar = wait.until(
+            EC.element_to_be_clickable((By.XPATH, "//button[@ng-click='find()' and contains(text(), 'Consultar')]"))
+        )
+        btn_consultar.click()
+        time.sleep(2)
+
+        # Verifica se o popup de "CNPJ: Não informado" apareceu
+        try:
+            cnpj_nao_informado = driver.find_element(
+                By.XPATH, "//div[@class='modal-body']//div[contains(@style, 'font-weight:bold;') and contains(text(), 'CNPJ: Não informado')]"
+            )
+            if cnpj_nao_informado.is_displayed():
+                print("⚠️ Detectado 'CNPJ: Não informado'. Recarregando e repetindo o filtro...")
+                driver.refresh()
+                time.sleep(3)
+
+                # Reaplica os filtros após refresh
+                driver.execute_script("arguments[0].value = arguments[1];", 
+                    driver.find_element(By.ID, "form-start-date-search-coupons"), start_date)
+                driver.execute_script("arguments[0].value = arguments[1];", 
+                    driver.find_element(By.ID, "form-end-date-search-coupons"), end_date)
+                driver.execute_script("arguments[0].value = arguments[1];", 
+                    driver.find_element(By.XPATH, "//input[@ng-model='formData.startDateTime']"), start_time)
+                driver.execute_script("arguments[0].value = arguments[1];", 
+                    driver.find_element(By.XPATH, "//input[@ng-model='formData.endDateTime']"), end_time)
+                time.sleep(1)
+                continue  # Repete o loop
+        except:
+            pass  # OK, CNPJ está informado
+
+        # Aguarda a tabela carregar
+        try:
+            WebDriverWait(driver, 15).until(
+                EC.visibility_of_element_located((By.XPATH, tabela_xpath))
+            )
+            print("✅ Tabela de resultados carregada com sucesso!")
+            break
+        except Exception as e:
+            if tentativa == max_tentativas:
+                raise RuntimeError("Falha ao carregar a tabela após múltiplas tentativas.")
+            print(f"Tentativa {tentativa} falhou. Tentando novamente...")
+
+    time.sleep(2)
     print("✅ Filtro aplicado com sucesso!")
