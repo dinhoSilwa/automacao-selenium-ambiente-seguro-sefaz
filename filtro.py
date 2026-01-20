@@ -10,104 +10,85 @@ from dotenv import load_dotenv
 load_dotenv()
 
 def aplicar_filtro_mfe(driver):
-    """
-    Executa o fluxo completo de navegação e filtragem após o login.
-    Recebe um driver autenticado (ex: retornado por login.py).
-    """
-    wait = WebDriverWait(driver, 20)
+    wait = WebDriverWait(driver, 30)
 
-    # --- Passo 1: Clicar em "MFE - Modulo Fiscal Eletronico" ---
+    # --- Passos 1 a 3: navegação até o CGF ---
     print("Passo 1: Acessando MFE...")
-    link_mfe = wait.until(
-        EC.element_to_be_clickable((By.XPATH, "//a[contains(@href, 'cweb2003.asp?sm=104') and contains(text(), 'MFE - Modulo Fiscal Eletronico')]"))
-    )
+    link_mfe = wait.until(EC.element_to_be_clickable((By.XPATH, "//a[contains(@href, 'cweb2003.asp?sm=104') and contains(text(), 'MFE')]")))
     link_mfe.click()
-    time.sleep(2)
+    time.sleep(1.5)
 
-    # --- Passo 2: Clicar em "Acessar MFe" ---
     print("Passo 2: Clicando em 'Acessar MFe'...")
-    link_acessar_mfe = wait.until(
-        EC.element_to_be_clickable((By.XPATH, "//a[contains(@href, 'cweb1010.asp') and contains(text(), 'Acessar MFe')]"))
-    )
+    link_acessar_mfe = wait.until(EC.element_to_be_clickable((By.XPATH, "//a[contains(@href, 'cweb1010.asp') and contains(text(), 'Acessar MFe')]")))
     link_acessar_mfe.click()
+    time.sleep(1.5)
+
+    cgf = os.getenv("CGF")
+    print(f"Passo 3: Clicando no CGF '{cgf}'...")
+    link_cgf = wait.until(EC.element_to_be_clickable((By.XPATH, f"//a[text()='{cgf}']")))
+    link_cgf.click()
+    print("Redirecionando para o portal MFE...")
+
+    # ⏳ Aguarda carregar a nova página (basta esperar pelo popup ou pelo menu)
+    print("Aguardando carregamento da página do portal MFE...")
+    wait.until(
+        EC.presence_of_element_located((By.CSS_SELECTOR, "div.mfe-migration-modal, .mainlevel"))
+    )
     time.sleep(2)
 
-    # --- Passo 3: Clicar no link com o CGF exato ---
-    cgf = os.getenv("CGF")
-    if not cgf:
-        raise ValueError("Variável CGF não definida no .env")
-
-    print(f"Passo 3: Procurando e clicando no link com CGF = {cgf}...")
-    link_cgf = wait.until(
-        EC.element_to_be_clickable((By.XPATH, f"//a[text()='{cgf}']"))
-    )
-    link_cgf.click()
-    time.sleep(3)  # Aguarda redirecionamento para https://cfe.sefaz.ce.gov.br/mfe/portal...
-
-    # --- ✅ NOVO LOCAL DO POPUP: após redirecionamento ---
-    print("Passo 4: Verificando popup 'ATENÇÃO!!!!!!' após redirecionamento...")
+    # ✅ FECHA O POPUP DE MIGRAÇÃO (obrigatório antes de qualquer interação)
+    print("Passo 4: Verificando e fechando popup de migração...")
     try:
-        # Espera até 6 segundos pelo modal (ele pode demorar um pouco para aparecer)
-        close_button = WebDriverWait(driver, 6).until(
-            EC.element_to_be_clickable((
-                By.XPATH,
-                "//div[@class='modal-header']//button[@class='close' and @ng-click='$hide()']"
-            ))
+        close_button = wait.until(
+            EC.element_to_be_clickable((By.CSS_SELECTOR, "div.mfe-migration-modal button.close[ng-click='$hide()']"))
         )
-        print("Popup 'ATENÇÃO!!!!!!' detectado. Fechando...")
+        print("Popup detectado. Fechando...")
         close_button.click()
-        # Opcional: aguarda o modal desaparecer
-        WebDriverWait(driver, 3).until_not(
-            EC.presence_of_element_located((By.XPATH, "//div[@class='modal-header']/h4[text()='ATENÇÃO!!!!!!']"))
+        # Aguarda o popup desaparecer
+        wait.until_not(
+            EC.visibility_of_element_located((By.CSS_SELECTOR, "div.mfe-migration-modal"))
         )
         time.sleep(1)
-    except Exception:
-        print("Nenhum popup 'ATENÇÃO!!!!!!' encontrado após redirecionamento. Prosseguindo...")
+    except Exception as e:
+        print("Nenhum popup de migração ativo.")
 
-    # --- Passo 5: Clicar em "Consultar NFC-e" ---
-    print("Passo 5: Acessando 'Consultar NFC-e'...")
-    link_consultar_nfce = wait.until(
-        EC.element_to_be_clickable((By.XPATH, "//a[@ui-sref='taxpayers.fiscalCouponsNfceList' and contains(@href, 'consultar-cupons-nfce-fiscais')]"))
+    # ✅ AGORA SIM: clica no link "Consultar NFC-e"
+    print("Passo 5: Clicando em 'Consultar NFC-e'...")
+    link_consultar = wait.until(
+        EC.element_to_be_clickable((By.XPATH, "//a[@ui-sref='taxpayers.fiscalCouponsNfceList']"))
     )
-    link_consultar_nfce.click()
-    time.sleep(3)
+    link_consultar.click()
+    time.sleep(2)
 
-    # --- Passo 6: Preencher data/hora de início ---
+    # --- Preenchimento dos filtros ---
     start_date = os.getenv("START")
     start_time = os.getenv("TIMESTART")
-    if not start_date or not start_time:
-        raise ValueError("Variáveis START e TIMESTART devem estar definidas no .env")
-
-    print(f"Passo 6: Preenchendo período inicial: {start_date} {start_time}...")
-    date_start_input = wait.until(EC.presence_of_element_located((By.ID, "form-start-date-search-coupons")))
-    driver.execute_script("arguments[0].value = arguments[1];", date_start_input, start_date)
-    time.sleep(0.5)
-
-    time_start_input = driver.find_element(By.XPATH, "//input[@ng-model='formData.startDateTime' and @bs-timepicker]")
-    driver.execute_script("arguments[0].value = arguments[1];", time_start_input, start_time)
-    time.sleep(1)
-
-    # --- Passo 7: Preencher data/hora final ---
     end_date = os.getenv("END")
     end_time = os.getenv("TIMEEND")
-    if not end_date or not end_time:
-        raise ValueError("Variáveis END e TIMEEND devem estar definidas no .env")
 
-    print(f"Passo 7: Preenchendo período final: {end_date} {end_time}...")
-    date_end_input = driver.find_element(By.ID, "form-end-date-search-coupons")
-    driver.execute_script("arguments[0].value = arguments[1];", date_end_input, end_date)
-    time.sleep(0.5)
+    if not all([start_date, start_time, end_date, end_time]):
+        raise ValueError("As variáveis START, TIMESTART, END e TIMEEND devem estar no .env")
 
-    time_end_input = driver.find_element(By.XPATH, "//input[@ng-model='formData.endDateTime' and @bs-timepicker]")
-    driver.execute_script("arguments[0].value = arguments[1];", time_end_input, end_time)
+    print("Passo 6: Preenchendo filtros...")
+
+    # Datas
+    driver.execute_script("arguments[0].value = arguments[1];", 
+        driver.find_element(By.ID, "form-start-date-search-coupons"), start_date)
+    driver.execute_script("arguments[0].value = arguments[1];", 
+        driver.find_element(By.ID, "form-end-date-search-coupons"), end_date)
+
+    # Horários
+    driver.execute_script("arguments[0].value = arguments[1];", 
+        driver.find_element(By.XPATH, "//input[@ng-model='formData.startDateTime']"), start_time)
+    driver.execute_script("arguments[0].value = arguments[1];", 
+        driver.find_element(By.XPATH, "//input[@ng-model='formData.endDateTime']"), end_time)
+
     time.sleep(1)
 
-    # --- Passo 8: Clicar no botão "Consultar" ---
-    print("Passo 8: Clicando em 'Consultar'...")
-    btn_consultar = wait.until(
-        EC.element_to_be_clickable((By.XPATH, "//button[contains(@ng-click, 'find()') and contains(text(), 'Consultar')]"))
-    )
-    btn_consultar.click()
+    # Botão Consultar
+    print("Passo 7: Clicando em 'Consultar'...")
+    btn = wait.until(EC.element_to_be_clickable((By.XPATH, "//button[contains(@ng-click, 'find()')]")))
+    btn.click()
     time.sleep(2)
 
     print("✅ Filtro aplicado com sucesso!")
