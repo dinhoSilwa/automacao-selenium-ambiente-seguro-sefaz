@@ -1,5 +1,3 @@
-# filtro.py
-
 import os
 import time
 from selenium.webdriver.common.by import By
@@ -14,75 +12,76 @@ def aplicar_filtro_mfe(driver):
 
     # --- Passo 1: Acessar MFE ---
     print("Passo 1: Acessando 'MFE - Modulo Fiscal Eletronico'...")
-    link_mfe = wait.until(EC.element_to_be_clickable((By.XPATH, "//a[contains(@href, 'cweb2003.asp?sm=104') and contains(text(), 'MFE')]")))
+    link_mfe = wait.until(
+        EC.element_to_be_clickable((By.XPATH, "//a[contains(@href, 'cweb2003.asp?sm=104') and contains(text(), 'MFE')]"))
+    )
     link_mfe.click()
     time.sleep(1.5)
 
     # --- Passo 2: Acessar MFe ---
     print("Passo 2: Clicando em 'Acessar MFe'...")
-    link_acessar_mfe = wait.until(EC.element_to_be_clickable((By.XPATH, "//a[contains(@href, 'cweb1010.asp') and contains(text(), 'Acessar MFe')]")))
+    link_acessar_mfe = wait.until(
+        EC.element_to_be_clickable((By.XPATH, "//a[contains(@href, 'cweb1010.asp') and contains(text(), 'Acessar MFe')]"))
+    )
     link_acessar_mfe.click()
     time.sleep(1.5)
 
-    # --- Passo 3: Clicar no link com CGF ---
+    # --- Passo 3: Clicar no CGF ---
     cgf = os.getenv("CGF")
     if not cgf:
         raise ValueError("Variável CGF não definida no .env")
 
-    print(f"Passo 3: Procurando link com CGF '{cgf}'...")
-    try:
-        # Tenta encontrar o link pelo texto exato
-        link_cgf = wait.until(
-            EC.element_to_be_clickable((By.XPATH, f"//a[text()='{cgf}']"))
-        )
+    print(f"Passo 3: Clicando no CGF '{cgf}'...")
+    original_window = driver.current_window_handle  # 👈 Salva a aba original
+    link_cgf = wait.until(EC.element_to_be_clickable((By.XPATH, f"//a[text()='{cgf}']")))
+    driver.execute_script("arguments[0].click();", link_cgf)  # Clique via JS para confiabilidade
 
-        # Scroll até o elemento (garante que está visível)
-        driver.execute_script("arguments[0].scrollIntoView({block: 'center', behavior: 'smooth'});", link_cgf)
-        time.sleep(1)
+    # --- ⏳ AGUARDA NOVA ABA ABRIR ---
+    print("Aguardando nova aba do Portal MFE...")
+    WebDriverWait(driver, 15).until(lambda d: len(d.window_handles) > 1)
 
-        # Tenta clicar normalmente
-        link_cgf.click()
-        print("Clique no CGF realizado com sucesso.")
+    # --- 🔁 MUDA O FOCO PARA A NOVA ABA ---
+    all_windows = driver.window_handles
+    new_window = None
+    for handle in all_windows:
+        if handle != original_window:
+            new_window = handle
+            break
 
-    except Exception as e:
-        print(f"Falha ao clicar no CGF via XPath. Tentando via JavaScript...")
-        # Se falhar, tenta clicar via JS (bypass de obstáculos visuais)
-        try:
-            link_cgf_js = driver.find_element(By.XPATH, f"//a[text()='{cgf}']")
-            driver.execute_script("arguments[0].click();", link_cgf_js)
-            print("Clique no CGF realizado via JavaScript.")
-        except Exception as js_error:
-            raise RuntimeError(f"Falha ao clicar no CGF '{cgf}': {js_error}")
+    if new_window:
+        driver.switch_to.window(new_window)
+        print("✅ Foco alterado para a nova aba do Portal MFE.")
+    else:
+        raise RuntimeError("Nova aba não foi aberta após o clique no CGF.")
 
-    print("Redirecionando para o portal MFE...")
-
-    # --- ⏳ AGUARDA O CARREGAMENTO DA NOVA PÁGINA (SPA) ---
-    print("Aguardando carregamento do menu do portal MFE...")
+    # --- Aguarda carregamento da nova página ---
+    print("Aguardando carregamento do Portal MFE...")
     wait.until(
-        EC.presence_of_element_located((By.XPATH, "//a[contains(@href, 'consultar-cupons-nfce-fiscais')]"))
+        EC.presence_of_element_located((By.CSS_SELECTOR, "div.mfe-migration-modal, .mainlevel"))
     )
     time.sleep(2)
 
-    # --- ✅ FECHA POPUP DE MIGRAÇÃO (se estiver visível) ---
+    # --- ✅ FECHA POPUP DE MIGRAÇÃO (se existir) ---
     print("Verificando popup de migração 'ATENÇÃO!!!!!!'...")
     try:
-        close_button = driver.find_element(By.CSS_SELECTOR, "div.mfe-migration-modal button.close[ng-click='$hide()']")
-        if close_button.is_displayed():
-            print("Popup detectado. Fechando...")
-            close_button.click()
-            time.sleep(1)
+        close_btn = wait.until(
+            EC.element_to_be_clickable((By.CSS_SELECTOR, "div.mfe-migration-modal button.close[ng-click='$hide()']"))
+        )
+        print("Popup detectado. Fechando...")
+        close_btn.click()
+        time.sleep(1)
     except Exception:
-        print("Nenhum popup de migração encontrado.")
+        print("Nenhum popup encontrado. Prosseguindo...")
 
     # --- Passo 4: Clicar em 'Consultar NFC-e' ---
     print("Passo 4: Clicando em 'Consultar NFC-e'...")
     link_consultar = wait.until(
-        EC.element_to_be_clickable((By.XPATH, "//a[contains(@href, 'consultar-cupons-nfce-fiscais')]"))
+        EC.element_to_be_clickable((By.XPATH, "//a[@ui-sref='taxpayers.fiscalCouponsNfceList']"))
     )
     link_consultar.click()
     time.sleep(2)
 
-    # --- Passo 5: Preencher filtros de data/hora ---
+    # --- Passo 5: Preencher filtros ---
     start_date = os.getenv("START")
     start_time = os.getenv("TIMESTART")
     end_date = os.getenv("END")
@@ -93,28 +92,24 @@ def aplicar_filtro_mfe(driver):
 
     print("Passo 5: Preenchendo filtros de período...")
 
-    # Data inicial
-    date_start_input = wait.until(EC.presence_of_element_located((By.ID, "form-start-date-search-coupons")))
-    driver.execute_script("arguments[0].value = arguments[1];", date_start_input, start_date)
+    # Datas
+    driver.execute_script("arguments[0].value = arguments[1];", 
+        driver.find_element(By.ID, "form-start-date-search-coupons"), start_date)
+    driver.execute_script("arguments[0].value = arguments[1];", 
+        driver.find_element(By.ID, "form-end-date-search-coupons"), end_date)
 
-    # Hora inicial
-    time_start_input = driver.find_element(By.XPATH, "//input[@ng-model='formData.startDateTime' and @bs-timepicker]")
-    driver.execute_script("arguments[0].value = arguments[1];", time_start_input, start_time)
-
-    # Data final
-    date_end_input = driver.find_element(By.ID, "form-end-date-search-coupons")
-    driver.execute_script("arguments[0].value = arguments[1];", date_end_input, end_date)
-
-    # Hora final
-    time_end_input = driver.find_element(By.XPATH, "//input[@ng-model='formData.endDateTime' and @bs-timepicker]")
-    driver.execute_script("arguments[0].value = arguments[1];", time_end_input, end_time)
+    # Horários
+    driver.execute_script("arguments[0].value = arguments[1];", 
+        driver.find_element(By.XPATH, "//input[@ng-model='formData.startDateTime']"), start_time)
+    driver.execute_script("arguments[0].value = arguments[1];", 
+        driver.find_element(By.XPATH, "//input[@ng-model='formData.endDateTime']"), end_time)
 
     time.sleep(1)
 
     # --- Passo 6: Clicar em 'Consultar' ---
     print("Passo 6: Clicando em 'Consultar'...")
     btn_consultar = wait.until(
-        EC.element_to_be_clickable((By.XPATH, "//button[contains(text(), 'Consultar') and @ng-click]"))
+        EC.element_to_be_clickable((By.XPATH, "//button[contains(@ng-click, 'find()')]"))
     )
     btn_consultar.click()
     time.sleep(2)
