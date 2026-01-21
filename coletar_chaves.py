@@ -11,7 +11,7 @@ from selenium.webdriver.support.ui import WebDriverWait
 def coletar_todas_chaves_nfe(driver, output_file="chaves_clicadas.txt"):
     """
     Coleta TODAS as chaves NFC-e de TODAS as páginas da tabela de resultados.
-    Usa seletores resilientes e verifica explicitamente a presença de elementos.
+    Salva em arquivo (append mode) e retorna lista de chaves válidas.
     """
     wait = WebDriverWait(driver, 30)
     todas_chaves = set()
@@ -33,11 +33,11 @@ def coletar_todas_chaves_nfe(driver, output_file="chaves_clicadas.txt"):
         except:
             pass  # OK, há dados
 
-        # Clica no botão "100" (se existir e não estiver ativo)
+        # Clica no botão "100" para expandir a tabela
         try:
             btn_100 = wait.until(EC.element_to_be_clickable((By.XPATH, "//button[.//span[text()='100']]")))
             # Verifica se já está ativo
-            if "active" not in btn_100.get_attribute("class"): # type: ignore
+            if "active" not in btn_100.get_attribute("class"):
                 print("  → Clicando em '100' para expandir a tabela...")
                 driver.execute_script("arguments[0].click();", btn_100)
                 time.sleep(2)
@@ -48,7 +48,7 @@ def coletar_todas_chaves_nfe(driver, output_file="chaves_clicadas.txt"):
         try:
             chave_elements = wait.until(
                 EC.presence_of_all_elements_located(
-                    (By.XPATH, "//td[@data-title-text='Chave NFCe']//a[@ng-click and @href='' and text()]")
+                    (By.XPATH, "//td[@data-title-text='Chave NFCe']//a[@ng-click and text()]")
                 )
             )
             chaves_pagina = []
@@ -56,13 +56,13 @@ def coletar_todas_chaves_nfe(driver, output_file="chaves_clicadas.txt"):
                 chave = elem.text.strip()
                 if len(chave) == 44 and chave.isdigit():
                     chaves_pagina.append(chave)
-            print(f"  → Encontradas {len(chaves_pagina)} chaves válidas nesta página.")
+            print(f"  → Encontradas {len(chaves_pagina)} chaves nesta página.")
             todas_chaves.update(chaves_pagina)
         except Exception as e:
             print(f"  ⚠️ Erro ao coletar chaves: {e}")
             break
 
-        # Verifica se existe próxima página
+        # Verifica se há próxima página
         try:
             next_button = driver.find_element(
                 By.XPATH,
